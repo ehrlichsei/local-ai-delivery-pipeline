@@ -30,6 +30,10 @@ diff --git a/tests/test_app.py b/tests/test_app.py
 """
         self.assertEqual(validate_patch_paths(patch), ["README.md"])
 
+    def test_normalizes_windows_line_endings(self):
+        patch = "diff --git a/README.md b/README.md\r\n--- a/README.md\r\n+++ b/README.md\r\n@@ -1 +1 @@\r\n-old\r\n+new\r\n"
+        self.assertEqual(validate_patch_paths(patch), ["README.md"])
+
     def test_rejects_workflow_changes(self):
         patch = """diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
 --- a/.github/workflows/ci.yml

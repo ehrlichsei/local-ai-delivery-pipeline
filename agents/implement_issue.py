@@ -54,6 +54,7 @@ def main() -> None:
     patch = result.get("patch")
     if not isinstance(summary, str) or not isinstance(patch, str):
         raise ValueError("The coding agent must return string summary and patch fields")
+    patch = patch.replace("\r\n", "\n").replace("\r", "\n")
     validate_patch_paths(patch)
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)

@@ -9,6 +9,7 @@ MAX_PATCH_BYTES = 30_000
 
 def validate_patch_paths(patch: str) -> list[str]:
     """Reject patches that touch anything outside the small demo code surface."""
+    patch = patch.replace("\r\n", "\n").replace("\r", "\n")
     if not patch.strip():
         raise ValueError("The agent returned an empty patch")
     if not patch.startswith("diff --git "):
@@ -33,9 +34,11 @@ def validate_patch_paths(patch: str) -> list[str]:
 
         section_end = headers[index + 1].start() if index + 1 < len(headers) else len(patch)
         section = patch[header.start():section_end]
-        if not re.search(rf"^--- a/{re.escape(old_path)}(?:\t.*)?$", section, flags=re.MULTILINE):
-            raise ValueError(f"Patch is missing the old-file header for {old_path}")
-        if not re.search(rf"^\+\+\+ b/{re.escape(old_path)}(?:\t.*)?$", section, flags=re.MULTILINE):
-            raise ValueError(f"Patch is missing the new-file header for {old_path}")
+        if not re.search(rf"^--- a/{re.escape(old_path)}(?:[ \t].*)?$", section, flags=re.MULTILINE):
+            old_headers = [line for line in section.splitlines() if line.startswith("---")]
+            raise ValueError(f"Patch is missing the old-file header for {old_path}; found {old_headers!r}")
+        if not re.search(rf"^\+\+\+ b/{re.escape(old_path)}(?:[ \t].*)?$", section, flags=re.MULTILINE):
+            new_headers = [line for line in section.splitlines() if line.startswith("+++")]
+            raise ValueError(f"Patch is missing the new-file header for {old_path}; found {new_headers!r}")
 
     return paths
