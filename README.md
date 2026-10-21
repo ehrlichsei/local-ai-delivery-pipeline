@@ -14,6 +14,7 @@ main push → same tests and AI test generation → deploy site/ to GitHub Pages
 
 - **QA agent** (`agents/generate_tests.py`) asks Gemini for behavioral test cases as JSON. The model returns data, not executable code; `agents/run_generated_tests.py` validates and executes cases through a fixed harness.
 - **Review agent** (`agents/review_diff.py`) reviews a PR diff and posts structured findings as a PR comment.
+- **Issue coding agent** (`.github/workflows/issue-agent.yml`) turns a repository issue into a constrained code proposal, runs tests, and opens a PR for human review.
 - **Deployment** publishes the static `site/` folder to GitHub Pages after baseline and AI-generated tests pass on `main`.
 
 The deployed page includes a browser-only calculator playground with addition, subtraction, multiplication, division, exponentiation, input errors, and a five-item calculation history. Values stay in the browser and are not sent to an API.
@@ -33,6 +34,7 @@ The default model is `gemini-3.5-flash-lite`. To choose another model, add an Ac
 
 - Opening or updating a PR to `main` runs baseline tests, AI-generated tests, and AI review. Fork PRs still get baseline tests; AI jobs skip them because GitHub does not provide repository secrets to fork workflows.
 - A push or merge to `main` reruns tests and AI test generation, then deploys the site if both jobs pass.
+- To request an implementation, open an issue and ask the repository owner to add the `ai:implement` label. The issue agent generates changes only for `app.py`, `tests/test_app.py`, and `README.md`, validates the patch, runs the tests, and opens a PR if they pass. It never merges or deploys by itself; merging its PR follows the normal review and deployment flow. The label-triggered workflow runs only when the label is added by the repository owner.
 
 ## Cost and data
 
