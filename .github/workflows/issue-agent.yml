@@ -1,0 +1,122 @@
+name: Issue coding agent
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-agent-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  generate-patch:
+    name: Generate a constrained patch
+    if: github.event.label.name == 'ai:implement' && github.event.sender.login == github.repository_owner
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Ask Gemini for a patch proposal
+        run: python agents/implement_issue.py
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash-lite' }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: issue-agent-patch
+          path: artifacts/issue.patch
+          if-no-files-found: error
+          retention-days: 1
+
+  validate-and-test:
+    name: Validate patch and run tests
+    needs: [generate-patch]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v7
+        with:
+          name: issue-agent-patch
+          path: artifacts
+      - name: Restrict patch paths and apply patch
+        run: |
+          python agents/validate_issue_patch.py artifacts/issue.patch
+          git apply --check artifacts/issue.patch
+          git apply artifacts/issue.patch
+      - name: Run baseline and agent utility tests
+        run: |
+          python -m unittest discover -s tests -v
+          python -m unittest discover -s agents -p 'test_*.py' -v
+      - uses: actions/upload-artifact@v7
+        with:
+          name: validated-issue-patch
+          path: artifacts/issue.patch
+          if-no-files-found: error
+          retention-days: 1
+
+  open-pull-request:
+    name: Open a human-review PR
+    needs: [validate-and-test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/download-artifact@v7
+        with:
+          name: validated-issue-patch
+          path: artifacts
+      - name: Apply validated patch and push proposal branch
+        id: apply
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          python agents/validate_issue_patch.py artifacts/issue.patch
+          git apply --check artifacts/issue.patch
+          git apply artifacts/issue.patch
+          if git diff --quiet; then
+            echo "The generated patch contains no changes."
+            exit 1
+          fi
+          BRANCH="ai/issue-${ISSUE_NUMBER}-${RUN_ID}"
+          git switch --create "$BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- app.py tests/test_app.py README.md
+          git commit -m "AI proposal for issue #${ISSUE_NUMBER}"
+          git push origin "$BRANCH"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+      - name: Create PR for human review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          BRANCH: ${{ steps.apply.outputs.branch }}
+        run: |
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "AI implementation for issue #${ISSUE_NUMBER}" \
+            --body "Closes #${ISSUE_NUMBER}. This is an AI-generated proposal. Review the diff and workflow checks before merging. The agent does not merge or deploy automatically."
