@@ -60,6 +60,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Fetch base branch
         run: git fetch origin main:refs/remotes/origin/main
       - name: Review diff with Gemini

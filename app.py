@@ -9,6 +9,8 @@ def calculate(operation: str, left: float, right: float) -> float:
         return left - right
     if operation == "multiply":
         return left * right
+    if operation == "power":
+        return left ** right
     if operation == "divide":
         if right == 0:
             raise ValueError("Cannot divide by zero")
