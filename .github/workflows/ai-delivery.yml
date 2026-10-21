@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   pull-requests: write
   pages: write
   id-token: write
@@ -17,32 +18,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ai-tests:
-    name: AI-generated tests + baseline tests
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Windows, X64, ollama]
+  tests:
+    name: Baseline tests
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
-          fetch-depth: 0
-      - name: Check Ollama is reachable
-        shell: pwsh
-        run: Invoke-RestMethod -Uri "$env:OLLAMA_BASE_URL/api/tags" -TimeoutSec 10 | Out-Null
-        env:
-          OLLAMA_BASE_URL: ${{ vars.OLLAMA_BASE_URL || 'http://127.0.0.1:11434' }}
-      - name: Generate behavioral tests with local AI
-        shell: pwsh
-        run: python agents/generate_tests.py
-        env:
-          OLLAMA_BASE_URL: ${{ vars.OLLAMA_BASE_URL || 'http://127.0.0.1:11434' }}
-          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL || 'qwen2.5-coder:7b' }}
-      - name: Run baseline and generated tests
-        shell: pwsh
+          python-version: '3.13'
+      - name: Run baseline and agent utility tests
         run: |
           python -m unittest discover -s tests -v
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s agents -p 'test_*.py' -v
+
+  ai-tests:
+    name: AI-generated tests
+    needs: [tests]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Generate behavioral tests with Gemini
+        run: python agents/generate_tests.py
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash-lite' }}
+      - name: Run generated tests
+        run: |
           python agents/run_generated_tests.py
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ai-test-cases
@@ -51,24 +55,20 @@ jobs:
 
   ai-review:
     name: AI pull request review
+    needs: [tests]
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Windows, X64, ollama]
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
+      - uses: actions/checkout@v7
       - name: Fetch base branch
-        shell: pwsh
         run: git fetch origin main:refs/remotes/origin/main
-      - name: Review diff with local AI
-        shell: pwsh
+      - name: Review diff with Gemini
         run: python agents/review_diff.py
         env:
-          OLLAMA_BASE_URL: ${{ vars.OLLAMA_BASE_URL || 'http://127.0.0.1:11434' }}
-          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL || 'qwen2.5-coder:7b' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash-lite' }}
       - name: Post review summary to pull request
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
@@ -76,14 +76,14 @@ jobs:
             const findings = report.findings.length
               ? report.findings.map((item) => `- **${item.severity.toUpperCase()}** \`${item.file}:${item.line || '?'}\` — ${item.title}\n  ${item.detail}`).join('\n')
               : 'No concrete issues found.';
-            const body = `## Local AI review\n\n${report.summary || 'Review complete.'}\n\n${findings}\n\n_Informational review from the repository's Ollama agent. A human still owns approval and merge._`;
+            const body = `## AI review\n\n${report.summary || 'Review complete.'}\n\n${findings}\n\n_Informational review from this repository's Gemini agent. A human still owns approval and merge._`;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
               body,
             });
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ai-review
@@ -93,16 +93,16 @@ jobs:
   deploy:
     name: Deploy GitHub Pages
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [ai-tests]
+    needs: [tests, ai-tests]
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/checkout@v7
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

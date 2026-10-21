@@ -5,7 +5,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from ollama_client import generate, parse_json_object
+from gemini_client import generate, parse_json_object
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,7 +42,7 @@ def main() -> None:
             raise ValueError("Each finding needs file, title, and detail")
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Review complete: {len(findings)} finding(s), model {os.environ.get('OLLAMA_MODEL', 'qwen2.5-coder:7b')}")
+    print(f"Review complete: {len(findings)} finding(s), model {os.environ.get('GEMINI_MODEL', 'gemini-3.5-flash-lite')}")
 
 
 if __name__ == "__main__":

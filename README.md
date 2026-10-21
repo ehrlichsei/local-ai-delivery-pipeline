@@ -1,52 +1,44 @@
-# 本地 AI 驱动的 GitHub 交付流水线
+# Cloud AI GitHub delivery pipeline
 
-一个不依赖 Copilot 订阅或模型 API key 的小型 demo。Ollama 在自己的电脑上提供模型，GitHub Actions 负责事件编排和部署：
+A small demo that uses GitHub-hosted runners for CI, AI inference, and deployment. It does not require a Copilot subscription or a self-hosted runner. AI inference uses the Gemini Developer API free tier; a Gemini API key is stored as a GitHub Actions secret.
 
 ```text
-PR → 本地 Ollama 生成行为测试 → 跑固定测试执行器 → 本地 Ollama 审查 diff → PR 留言
-主分支 push → 同一套 AI 测试通过 → GitHub Pages 部署
+PR → GitHub-hosted tests → Gemini generates test cases → fixed test harness runs them
+   → Gemini reviews the diff → findings are posted to the PR
+main push → same tests and AI test generation → deploy site/ to GitHub Pages
 ```
 
-## Agent 做什么
+## Agents
 
-- **QA agent** (`agents/generate_tests.py`) 阅读 `app.py`，让模型输出 JSON 测例。生成的是数据而不是 Python 代码，再由固定的 `run_generated_tests.py` 执行，避免直接运行模型生成的脚本。
-- **Review agent** (`agents/review_diff.py`) 阅读 PR diff，输出结构化发现，并由 workflow 留言到 PR。
-- **部署**由 GitHub Pages Actions 完成，仅在 `main` 的 push 且 AI 测试成功后运行。
+- **QA agent** (`agents/generate_tests.py`) asks Gemini for behavioral test cases as JSON. The model returns data, not executable code; `agents/run_generated_tests.py` validates and executes cases through a fixed harness.
+- **Review agent** (`agents/review_diff.py`) reviews a PR diff and posts structured findings as a PR comment.
+- **Deployment** publishes the static `site/` folder to GitHub Pages after baseline and AI-generated tests pass on `main`.
 
-模型输出可能漏测或误报。AI review 只是辅助信息，PR 仍需人类检查和合并。
+AI suggestions can miss defects or report false positives. Keep human review and merge approval.
 
-## 准备
+## One-time GitHub setup
 
-1. 把本目录内容放进一个独立 GitHub repository 的根目录。PR 的 AI jobs 仅对同仓库分支运行，来自 fork 的 PR 会跳过自托管 runner。
-2. 在一台常开且安装了 Git、Python 3.11+、Ollama 的电脑上注册 GitHub self-hosted runner。给 runner 添加自定义 label：`ollama`；本工作流按 `self-hosted, Windows, X64, ollama` 选择它。
-3. 在 runner 电脑启动 Ollama 并下载模型：
+1. Create a Gemini API key in [Google AI Studio](https://aistudio.google.com/app/apikey).
+2. In this repository, open **Settings → Secrets and variables → Actions → New repository secret**. Name it `GEMINI_API_KEY` and paste the key. Never commit the key into the repository.
+3. In **Settings → Pages → Build and deployment**, set the source to **GitHub Actions**.
+4. Keep the default branch as `main`. Require the `Baseline tests` check and human PR review before merging.
 
-   ```powershell
-   ollama pull qwen2.5-coder:7b
-   ollama run qwen2.5-coder:7b
-   ```
+The default model is `gemini-3.5-flash-lite`. To choose another model, add an Actions variable named `GEMINI_MODEL` with a model ID available to your Gemini API project.
 
-   Ollama 默认 API 地址为 `http://127.0.0.1:11434`。确保 runner 服务进程能访问该地址；若 Ollama 跑在另一台机器上，在仓库 Settings → Secrets and variables → Actions → Variables 中设置 `OLLAMA_BASE_URL` 和 `OLLAMA_MODEL`。
+## Triggers
 
-4. 在 GitHub 仓库 Settings → Pages → Build and deployment 选择 **GitHub Actions**。
-5. 将 `main` 设为默认分支，并建议设置 branch protection：要求 `AI-generated tests + baseline tests` 成功；由人类完成 PR review 和合并。
+- Opening or updating a PR to `main` runs baseline tests, AI-generated tests, and AI review. Fork PRs still get baseline tests; AI jobs skip them because GitHub does not provide repository secrets to fork workflows.
+- A push or merge to `main` reruns tests and AI test generation, then deploys the site if both jobs pass.
 
-## 触发
+## Cost and data
 
-- 开 PR 到 `main`：执行 AI 生成测例、baseline tests 和 AI review；review 结果作为 PR 评论。
-- push/merge 到 `main`：重新跑 AI 测试，通过后发布 `site/` 到 GitHub Pages。
-- 也可以在 runner 电脑本地试：
+- GitHub-hosted Actions are free for public repositories under GitHub's current policy. Gemini offers a free tier with request limits; availability and quotas can change.
+- Gemini's free-tier prompts may be used by Google to improve its products. Do not send secrets, private source, or sensitive data through the free tier. This demo repository is public.
+- If the free quota is exceeded, AI jobs fail; ordinary baseline tests still run. No automatic paid upgrade or fallback is configured.
 
-  ```powershell
-  $env:OLLAMA_MODEL = "qwen2.5-coder:7b"
-  python agents/generate_tests.py
-  python -m unittest discover -s tests -v
-  python agents/run_generated_tests.py
-  ```
+## Local checks
 
-## 安全边界
-
-- PR 分支里的 workflow、依赖和代码可能在 runner 上执行。工作流会跳过 fork PR；仍只应让可信写入者创建的同仓库分支使用 runner。GitHub 建议公开仓库避免使用持久自托管 runner；公开仓库应改用隔离的临时虚拟机或 GitHub-hosted runner。
-- 给 runner 单独创建操作系统用户和工作目录，不存放日常账号凭据。GitHub Pages deploy 使用 GitHub 提供的短期 Actions token，不需要个人访问令牌。
-- Ollama 和模型运行在本机；GitHub 仍托管代码、workflow 日志和部署产物。自托管 runner 与 GitHub Pages 用量仍受 GitHub 计划和额度约束。
-- AI 测试只接受有限 JSON schema，由固定 harness 执行；依然要把测试结果和模型评审当作建议，不能替代人工判断。
+```bash
+python -m unittest discover -s tests -v
+python -m unittest discover -s agents -p 'test_*.py' -v
+```
