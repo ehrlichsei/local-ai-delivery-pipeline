@@ -3,6 +3,7 @@
 
 def calculate(operation: str, left: float, right: float) -> float:
     """Apply a basic arithmetic operation, rejecting invalid input."""
+    print(f"DEBUG calculate: {operation} {left} {right}")
     if operation == "add":
         return left + right
     if operation == "subtract":
