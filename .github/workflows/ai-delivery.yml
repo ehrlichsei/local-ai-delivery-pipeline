@@ -1,0 +1,108 @@
+name: AI delivery pipeline
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ai-delivery-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ai-tests:
+    name: AI-generated tests + baseline tests
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, ollama]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check Ollama is reachable
+        shell: pwsh
+        run: Invoke-RestMethod -Uri "$env:OLLAMA_BASE_URL/api/tags" -TimeoutSec 10 | Out-Null
+        env:
+          OLLAMA_BASE_URL: ${{ vars.OLLAMA_BASE_URL || 'http://127.0.0.1:11434' }}
+      - name: Generate behavioral tests with local AI
+        shell: pwsh
+        run: python agents/generate_tests.py
+        env:
+          OLLAMA_BASE_URL: ${{ vars.OLLAMA_BASE_URL || 'http://127.0.0.1:11434' }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL || 'qwen2.5-coder:7b' }}
+      - name: Run baseline and generated tests
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python agents/run_generated_tests.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-test-cases
+          path: artifacts/ai_test_cases.json
+          if-no-files-found: ignore
+
+  ai-review:
+    name: AI pull request review
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, ollama]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Fetch base branch
+        shell: pwsh
+        run: git fetch origin main:refs/remotes/origin/main
+      - name: Review diff with local AI
+        shell: pwsh
+        run: python agents/review_diff.py
+        env:
+          OLLAMA_BASE_URL: ${{ vars.OLLAMA_BASE_URL || 'http://127.0.0.1:11434' }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL || 'qwen2.5-coder:7b' }}
+      - name: Post review summary to pull request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('artifacts/ai_review.json', 'utf8'));
+            const findings = report.findings.length
+              ? report.findings.map((item) => `- **${item.severity.toUpperCase()}** \`${item.file}:${item.line || '?'}\` — ${item.title}\n  ${item.detail}`).join('\n')
+              : 'No concrete issues found.';
+            const body = `## Local AI review\n\n${report.summary || 'Review complete.'}\n\n${findings}\n\n_Informational review from the repository's Ollama agent. A human still owns approval and merge._`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-review
+          path: artifacts/ai_review.json
+          if-no-files-found: ignore
+
+  deploy:
+    name: Deploy GitHub Pages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [ai-tests]
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
