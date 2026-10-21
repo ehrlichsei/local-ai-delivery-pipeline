@@ -2,6 +2,8 @@
 
 A small demo that uses GitHub-hosted runners for CI, AI inference, and deployment. It does not require a Copilot subscription or a self-hosted runner. AI inference uses the Gemini Developer API free tier; a Gemini API key is stored as a GitHub Actions secret.
 
+**Live demo:** [https://ehrlichsei.github.io/local-ai-delivery-pipeline/](https://ehrlichsei.github.io/local-ai-delivery-pipeline/)
+
 ```text
 PR → GitHub-hosted tests → Gemini generates test cases → fixed test harness runs them
    → Gemini reviews the diff → findings are posted to the PR
