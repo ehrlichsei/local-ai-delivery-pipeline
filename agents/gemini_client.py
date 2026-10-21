@@ -6,16 +6,19 @@ import urllib.error
 import urllib.request
 
 
-def generate(prompt: str, *, system: str = "") -> str:
+def generate(prompt: str, *, system: str = "", response_schema: dict | None = None) -> str:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is missing; add it as a repository Actions secret")
     model = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    generation_config = {"temperature": 0.1, "responseMimeType": "application/json"}
+    if response_schema is not None:
+        generation_config["responseSchema"] = response_schema
     body = json.dumps({
         "systemInstruction": {"parts": [{"text": system}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"},
+        "generationConfig": generation_config,
     }).encode("utf-8")
     request = urllib.request.Request(
         url,
