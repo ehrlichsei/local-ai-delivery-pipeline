@@ -18,7 +18,7 @@ CASE_SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "operation": {"type": "string", "enum": ["add", "subtract", "multiply", "divide", "unknown"]},
+                    "operation": {"type": "string", "enum": ["add", "subtract", "multiply", "divide", "power", "unknown"]},
                     "left": {"type": "number"},
                     "right": {"type": "number"},
                     "expected": {
@@ -63,7 +63,7 @@ def main() -> None:
     for case in cases:
         if not isinstance(case, dict) or not {"operation", "left", "right", "expected"} <= case.keys():
             raise ValueError("Each test case needs operation, left, right, and expected")
-        if case["operation"] not in {"add", "subtract", "multiply", "divide", "unknown"}:
+        if case["operation"] not in {"add", "subtract", "multiply", "divide", "power", "unknown"}:
             raise ValueError("Unsupported operation in generated case")
         if isinstance(case["left"], bool) or not isinstance(case["left"], (int, float)):
             raise ValueError("Generated operands must be numbers")
