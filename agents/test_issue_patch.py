@@ -20,6 +20,16 @@ diff --git a/tests/test_app.py b/tests/test_app.py
 """
         self.assertEqual(validate_patch_paths(patch), ["app.py", "tests/test_app.py"])
 
+    def test_allows_standard_unified_diff_timestamps(self):
+        patch = """diff --git a/README.md b/README.md
+--- a/README.md\t2026-10-22 10:00:00 +0000
++++ b/README.md\t2026-10-22 10:01:00 +0000
+@@ -1 +1 @@
+-old
++new
+"""
+        self.assertEqual(validate_patch_paths(patch), ["README.md"])
+
     def test_rejects_workflow_changes(self):
         patch = """diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
 --- a/.github/workflows/ci.yml

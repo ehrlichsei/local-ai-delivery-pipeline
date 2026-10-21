@@ -33,9 +33,9 @@ def validate_patch_paths(patch: str) -> list[str]:
 
         section_end = headers[index + 1].start() if index + 1 < len(headers) else len(patch)
         section = patch[header.start():section_end]
-        if not re.search(rf"^--- a/{re.escape(old_path)}$", section, flags=re.MULTILINE):
+        if not re.search(rf"^--- a/{re.escape(old_path)}(?:\t.*)?$", section, flags=re.MULTILINE):
             raise ValueError(f"Patch is missing the old-file header for {old_path}")
-        if not re.search(rf"^\+\+\+ b/{re.escape(old_path)}$", section, flags=re.MULTILINE):
+        if not re.search(rf"^\+\+\+ b/{re.escape(old_path)}(?:\t.*)?$", section, flags=re.MULTILINE):
             raise ValueError(f"Patch is missing the new-file header for {old_path}")
 
     return paths
