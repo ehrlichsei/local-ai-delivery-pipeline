@@ -14,6 +14,8 @@ main push → same tests and AI test generation → deploy site/ to GitHub Pages
 - **Review agent** (`agents/review_diff.py`) reviews a PR diff and posts structured findings as a PR comment.
 - **Deployment** publishes the static `site/` folder to GitHub Pages after baseline and AI-generated tests pass on `main`.
 
+The deployed page includes a browser-only calculator playground with addition, subtraction, multiplication, division, exponentiation, input errors, and a five-item calculation history. Values stay in the browser and are not sent to an API.
+
 AI suggestions can miss defects or report false positives. Keep human review and merge approval.
 
 ## One-time GitHub setup
