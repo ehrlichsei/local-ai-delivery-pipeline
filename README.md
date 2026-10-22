@@ -17,7 +17,7 @@ main push → same tests and AI test generation → deploy site/ to GitHub Pages
 - **Issue coding agent** (`.github/workflows/issue-agent.yml`) turns a repository issue into a constrained code proposal, runs tests, and opens a PR for human review.
 - **Deployment** publishes the static `site/` folder to GitHub Pages after baseline and AI-generated tests pass on `main`.
 
-The deployed page includes a browser-only calculator playground with addition, subtraction, multiplication, division, exponentiation, input errors, and a five-item calculation history. Values stay in the browser and are not sent to an API.
+The deployed page includes a browser-only calculator playground with addition, subtraction, multiplication, division, modulo, exponentiation, input errors, and a five-item calculation history. Values stay in the browser and are not sent to an API.
 
 AI suggestions can miss defects or report false positives. Keep human review and merge approval.
 

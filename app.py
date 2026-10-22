@@ -15,4 +15,8 @@ def calculate(operation: str, left: float, right: float) -> float:
         if right == 0:
             raise ValueError("Cannot divide by zero")
         return left / right
+    if operation == "modulo":
+        if right == 0:
+            raise ValueError("Cannot divide by zero")
+        return left % right
     raise ValueError(f"Unknown operation: {operation}")
