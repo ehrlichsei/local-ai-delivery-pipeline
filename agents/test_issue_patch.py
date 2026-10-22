@@ -1,9 +1,47 @@
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
-from issue_patch import validate_patch_paths
+from issue_patch import build_patch, validate_patch_paths
 
 
 class ValidateIssuePatchTests(unittest.TestCase):
+    def test_builds_applyable_diff_from_full_file_content(self):
+        originals = {"app.py": "def calculate():\n    return 1\n"}
+        patch = build_patch(
+            [{"path": "app.py", "content": "def calculate():\n    return 2\n"}],
+            originals,
+        )
+        self.assertIn("diff --git a/app.py b/app.py", patch)
+        self.assertIn("@@ -1,2 +1,2 @@", patch)
+        self.assertEqual(validate_patch_paths(patch), ["app.py"])
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "app.py").write_text(originals["app.py"], encoding="utf-8")
+            subprocess.run(
+                ["git", "apply", "--check", "-"],
+                cwd=directory,
+                input=patch,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+    def test_rejects_model_changes_outside_allowlist(self):
+        with self.assertRaisesRegex(ValueError, "outside the allowed scope"):
+            build_patch(
+                [{"path": ".github/workflows/issue-agent.yml", "content": "bad\n"}],
+                {},
+            )
+
+    def test_rejects_duplicate_file_changes(self):
+        changes = [
+            {"path": "app.py", "content": "one\n"},
+            {"path": "app.py", "content": "two\n"},
+        ]
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            build_patch(changes, {"app.py": "original\n"})
+
     def test_allows_changes_to_app_and_tests(self):
         patch = """diff --git a/app.py b/app.py
 --- a/app.py
