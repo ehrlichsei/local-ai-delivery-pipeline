@@ -17,7 +17,7 @@ main push → same tests and AI test generation → deploy site/ to GitHub Pages
 - **Issue coding agent** (`.github/workflows/issue-agent.yml`) turns a repository issue into a constrained code proposal, runs tests, and opens a PR for human review.
 - **Deployment** publishes the static `site/` folder to GitHub Pages after baseline and AI-generated tests pass on `main`.
 
-The deployed page includes a browser-only calculator playground with addition, subtraction, multiplication, division, modulo, exponentiation, input errors, and a five-item calculation history. Values stay in the browser and are not sent to an API.
+The deployed page includes a browser-only calculator playground with addition, subtraction, multiplication, division, exponentiation, input errors, and a five-item calculation history. Values stay in the browser and are not sent to an API. The Python `app.py` calculator also supports modulo; this backend function is covered by tests but is not wired into the browser playground.
 
 AI suggestions can miss defects or report false positives. Keep human review and merge approval.
 
@@ -35,6 +35,9 @@ The default model is `gemini-3.5-flash-lite`. To choose another model, add an Ac
 - Opening or updating a PR to `main` runs baseline tests, AI-generated tests, and AI review. Fork PRs still get baseline tests; AI jobs skip them because GitHub does not provide repository secrets to fork workflows.
 - A push or merge to `main` reruns tests and AI test generation, then deploys the site if both jobs pass.
 - To request an implementation, open an issue and ask the repository owner to add the `ai:implement` label. The issue agent generates changes only for `app.py`, `tests/test_app.py`, and `README.md`, validates the patch, runs the tests, and opens a PR if they pass. It never merges or deploys by itself; merging its PR follows the normal review and deployment flow. The label-triggered workflow runs only when the label is added by the repository owner.
+- The Issue agent also scans open issues every Monday at 09:17 UTC. It triages at most five unscanned issues and processes at most one suitable task per run. It marks checked issues with `ai:scanned`; if one is suitable, it adds `ai:implement` and continues through the same tests and PR flow. Remove `ai:scanned` to let the next scan consider an issue again. Run the scan immediately from **Actions → Issue coding agent → Run workflow**; an optional issue number skips triage and selects that issue directly.
+- Scheduled triage sends public issue titles and bodies to Gemini. Do not put secrets or sensitive information in repository issues.
+- For Actions to open PRs automatically, enable **Settings → Actions → General → Workflow permissions → Allow GitHub Actions to create and approve pull requests**. PRs created with the built-in workflow token may require a maintainer to approve their workflow checks.
 
 ## Cost and data
 

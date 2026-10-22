@@ -3,18 +3,59 @@ name: Issue coding agent
 on:
   issues:
     types: [labeled]
+  schedule:
+    - cron: '17 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number (leave empty to scan for a task)'
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: issue-agent-${{ github.event.issue.number }}
+  group: issue-agent
   cancel-in-progress: false
 
 jobs:
+  select-issue:
+    name: Scan and select one issue
+    if: github.event_name != 'issues' || (github.event.label.name == 'ai:implement' && github.event.sender.login == github.repository_owner)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      issue_number: ${{ steps.select.outputs.issue_number }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Triage open issues or use the requested issue
+        id: select
+        run: python agents/scan_issues.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash-lite' }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number || '' }}
+      - uses: actions/upload-artifact@v7
+        if: steps.select.outputs.issue_number != ''
+        with:
+          name: issue-agent-context
+          path: artifacts/issue-context.json
+          if-no-files-found: error
+          retention-days: 1
+
   generate-patch:
     name: Generate a constrained patch
-    if: github.event.label.name == 'ai:implement' && github.event.sender.login == github.repository_owner
+    needs: [select-issue]
+    if: needs.select-issue.outputs.issue_number != ''
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -25,14 +66,17 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
+      - uses: actions/download-artifact@v7
+        with:
+          name: issue-agent-context
+          path: artifacts
       - name: Ask Gemini for a patch proposal
         run: python agents/implement_issue.py
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash-lite' }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          ISSUE_TITLE: ${{ github.event.issue.title }}
-          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ needs.select-issue.outputs.issue_number }}
+          ISSUE_CONTEXT_FILE: artifacts/issue-context.json
       - uses: actions/upload-artifact@v7
         with:
           name: issue-agent-patch
@@ -42,7 +86,7 @@ jobs:
 
   validate-and-test:
     name: Validate patch and run tests
-    needs: [generate-patch]
+    needs: [select-issue, generate-patch]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -75,11 +119,12 @@ jobs:
 
   open-pull-request:
     name: Open a human-review PR
-    needs: [validate-and-test]
+    needs: [select-issue, validate-and-test]
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
+      issues: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -91,7 +136,7 @@ jobs:
       - name: Apply validated patch and push proposal branch
         id: apply
         env:
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_NUMBER: ${{ needs.select-issue.outputs.issue_number }}
           RUN_ID: ${{ github.run_id }}
         run: |
           python agents/validate_issue_patch.py artifacts/issue.patch
@@ -112,11 +157,14 @@ jobs:
       - name: Create PR for human review
         env:
           GH_TOKEN: ${{ github.token }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_NUMBER: ${{ needs.select-issue.outputs.issue_number }}
           BRANCH: ${{ steps.apply.outputs.branch }}
         run: |
-          gh pr create \
+          if ! gh pr create \
             --base main \
             --head "$BRANCH" \
             --title "AI implementation for issue #${ISSUE_NUMBER}" \
-            --body "Closes #${ISSUE_NUMBER}. This is an AI-generated proposal. Review the diff and workflow checks before merging. The agent does not merge or deploy automatically."
+            --body "Closes #${ISSUE_NUMBER}. This is an AI-generated proposal. Review the diff and workflow checks before merging. The agent does not merge or deploy automatically."; then
+            echo "::error::Enable GitHub Actions to create pull requests in Settings > Actions > General > Workflow permissions. The proposal branch was pushed and can be opened manually."
+            exit 1
+          fi
